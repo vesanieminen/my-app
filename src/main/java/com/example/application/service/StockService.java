@@ -49,6 +49,30 @@ public class StockService {
         return quotes;
     }
 
+    public List<HistoricalDataPoint> getHistoricalData(String symbol, String resolution, long from, long to) {
+        try {
+            String url = String.format("%s/stock/candle?symbol=%s&resolution=%s&from=%d&to=%d&token=%s",
+                    BASE_URL, symbol.toUpperCase(), resolution, from, to, apiKey);
+            
+            ResponseEntity<FinnhubHistoricalData> response = restTemplate.getForEntity(url, FinnhubHistoricalData.class);
+            FinnhubHistoricalData data = response.getBody();
+            
+            List<HistoricalDataPoint> historicalData = new ArrayList<>();
+            if (data != null && "ok".equals(data.getStatus())) {
+                for (int i = 0; i < data.getTimestamps().length; i++) {
+                    HistoricalDataPoint point = new HistoricalDataPoint();
+                    point.setTimestamp(data.getTimestamps()[i]);
+                    point.setClose(data.getClosePrices()[i]);
+                    historicalData.add(point);
+                }
+            }
+            return historicalData;
+        } catch (Exception e) {
+            System.err.println("Error fetching historical data for " + symbol + ": " + e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
     private StockQuote convertToStockQuote(String symbol, FinnhubQuote finnhubQuote) {
         StockQuote quote = new StockQuote();
         quote.setSymbol(symbol.toUpperCase());
@@ -104,6 +128,42 @@ public class StockService {
         }
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class FinnhubHistoricalData {
+        @JsonProperty("s")
+        private String status;
+        
+        @JsonProperty("t")
+        private long[] timestamps;
+        
+        @JsonProperty("c")
+        private double[] closePrices;
+
+        public String getStatus() {
+            return status;
+        }
+
+        public void setStatus(String status) {
+            this.status = status;
+        }
+
+        public long[] getTimestamps() {
+            return timestamps;
+        }
+
+        public void setTimestamps(long[] timestamps) {
+            this.timestamps = timestamps;
+        }
+
+        public double[] getClosePrices() {
+            return closePrices;
+        }
+
+        public void setClosePrices(double[] closePrices) {
+            this.closePrices = closePrices;
+        }
+    }
+
     public static class StockQuote {
         private String symbol;
         private String price;
@@ -140,6 +200,27 @@ public class StockService {
 
         public void setChangePercent(String changePercent) {
             this.changePercent = changePercent;
+        }
+    }
+
+    public static class HistoricalDataPoint {
+        private long timestamp;
+        private double close;
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+
+        public void setTimestamp(long timestamp) {
+            this.timestamp = timestamp;
+        }
+
+        public double getClose() {
+            return close;
+        }
+
+        public void setClose(double close) {
+            this.close = close;
         }
     }
 }

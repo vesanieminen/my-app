@@ -3,6 +3,7 @@ package com.example.application.views.stock;
 import com.example.application.service.StockService;
 import com.example.application.service.StockSymbolUtil;
 import com.example.application.service.StockService.StockQuote;
+import com.example.application.service.StockService.HistoricalDataPoint;
 import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.UI;
@@ -10,15 +11,21 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
+import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.lumo.LumoUtility;
+import com.vaadin.flow.component.charts.Chart;
+import com.vaadin.flow.component.charts.model.*;
 import org.vaadin.lineawesome.LineAwesomeIconUrl;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,8 +42,11 @@ public class StockView extends VerticalLayout {
     private final MultiSelectComboBox<String> symbolSelector;
     private final Grid<StockQuote> stockGrid;
     private final Span updatedSpan;
+    private final Chart chart;
+    private final Select<String> timeRangeSelect;
     private UI ui;
     private List<String> selectedSymbols = new ArrayList<>();
+    private String selectedSymbol = "";
 
     public StockView(StockService stockService) {
         this.stockService = stockService;
@@ -49,8 +59,8 @@ public class StockView extends VerticalLayout {
         title.addClassNames(LumoUtility.Margin.Bottom.MEDIUM);
         title.getStyle()
             .set("color", "var(--lumo-primary-color)")
-            .set("font-size", "var(--lumo-font-size-xxxl)")  // Making the title larger
-            .set("font-weight", "600");  // Making it semi-bold for better visibility
+            .set("font-size", "var(--lumo-font-size-xxxl)")
+            .set("font-weight", "600");
 
         Span description = new Span("Enter company name or stock symbol (e.g. 'Tesla' or 'TSLA')");
         description.addClassNames(LumoUtility.Margin.Bottom.MEDIUM);
@@ -68,19 +78,23 @@ public class StockView extends VerticalLayout {
             symbolSelector.setValue(currentValues);
         });
 
-        // Show all available stocks in the dropdown
         symbolSelector.setItems(StockSymbolUtil.getAllStocks());
         symbolSelector.setWidth("300px");
         symbolSelector.addValueChangeListener(event -> {
             selectedSymbols = event.getValue().stream()
-                .map(item -> item.split(" - ")[0])  // Extract symbol from "SYMBOL - Name" format
+                .map(item -> item.split(" - ")[0])
                 .collect(Collectors.toList());
             updateStockInfo();
+            if (!selectedSymbols.isEmpty() && (selectedSymbol.isEmpty() || !selectedSymbols.contains(selectedSymbol))) {
+                selectedSymbol = selectedSymbols.get(0);
+                updateChart();
+            }
         });
 
         stockGrid = new Grid<>();
         stockGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
-        stockGrid.setSizeFull();
+        stockGrid.setHeight("200px");
+        stockGrid.setMinWidth("600px");
         
         stockGrid.addColumn(StockQuote::getSymbol)
             .setHeader("Symbol")
@@ -115,12 +129,59 @@ public class StockView extends VerticalLayout {
         .setWidth("100px")
         .setFlexGrow(0);
 
+        stockGrid.addItemClickListener(event -> {
+            selectedSymbol = event.getItem().getSymbol();
+            updateChart();
+        });
+
+        // Create time range selector
+        timeRangeSelect = new Select<>();
+        timeRangeSelect.setItems("1D", "1W", "1M", "1Y", "2Y", "5Y", "10Y", "MAX");
+        timeRangeSelect.setValue("1M");
+        timeRangeSelect.setWidth("100px");
+        timeRangeSelect.addValueChangeListener(event -> updateChart());
+
+        // Initialize the chart
+        chart = new Chart();
+        Configuration conf = chart.getConfiguration();
+        conf.getChart().setType(ChartType.LINE);
+        conf.getChart().setZoomType(Dimension.X);
+        
+        YAxis yAxis = new YAxis();
+        yAxis.setTitle(new AxisTitle("Price ($)"));
+        conf.addyAxis(yAxis);
+        
+        XAxis xAxis = new XAxis();
+        xAxis.setType(AxisType.DATETIME);
+        conf.addxAxis(xAxis);
+        
+        chart.setWidth("100%");
+        chart.setHeight("400px");
+
         updatedSpan = new Span();
         updatedSpan.getStyle()
             .set("color", "var(--lumo-secondary-text-color)")
             .set("font-size", "14px");
 
-        add(title, description, symbolSelector, stockGrid, updatedSpan);
+        // Create layouts
+        HorizontalLayout mainContent = new HorizontalLayout();
+        VerticalLayout leftSide = new VerticalLayout();
+        VerticalLayout rightSide = new VerticalLayout();
+
+        leftSide.add(symbolSelector, stockGrid, updatedSpan);
+        leftSide.setSpacing(false);
+        leftSide.setPadding(false);
+
+        rightSide.add(timeRangeSelect, chart);
+        rightSide.setSpacing(false);
+        rightSide.setPadding(false);
+
+        mainContent.add(leftSide, rightSide);
+        mainContent.setSizeFull();
+        mainContent.setSpacing(true);
+        mainContent.setPadding(false);
+
+        add(title, description, mainContent);
     }
 
     private void updateStockInfo() {
@@ -134,6 +195,64 @@ public class StockView extends VerticalLayout {
             stockGrid.setItems(new ArrayList<>());
             updatedSpan.setText("");
         }
+    }
+
+    private void updateChart() {
+        if (selectedSymbol.isEmpty()) return;
+
+        long to = Instant.now().getEpochSecond();
+        long from = calculateFromTimestamp(timeRangeSelect.getValue());
+
+        List<HistoricalDataPoint> historicalData = stockService.getHistoricalData(
+            selectedSymbol,
+            getResolution(timeRangeSelect.getValue()),
+            from,
+            to
+        );
+
+        Configuration conf = chart.getConfiguration();
+        conf.setTitle(selectedSymbol + " Stock Price");
+        conf.getSeries().clear();
+
+        DataSeries series = new DataSeries();
+        series.setName(selectedSymbol);
+
+        for (HistoricalDataPoint point : historicalData) {
+            series.add(new DataSeriesItem(point.getTimestamp() * 1000L, point.getClose()));
+        }
+
+        conf.addSeries(series);
+        chart.drawChart(true);
+    }
+
+    private long calculateFromTimestamp(String timeRange) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime from = switch (timeRange) {
+            case "1D" -> now.minusDays(1);
+            case "1W" -> now.minusWeeks(1);
+            case "1M" -> now.minusMonths(1);
+            case "1Y" -> now.minusYears(1);
+            case "2Y" -> now.minusYears(2);
+            case "5Y" -> now.minusYears(5);
+            case "10Y" -> now.minusYears(10);
+            case "MAX" -> now.minusYears(30); // Maximum data available
+            default -> now.minusMonths(1);
+        };
+        return from.toInstant(ZoneOffset.UTC).getEpochSecond();
+    }
+
+    private String getResolution(String timeRange) {
+        return switch (timeRange) {
+            case "1D" -> "5";      // 5 minutes
+            case "1W" -> "60";     // 1 hour
+            case "1M" -> "D";      // 1 day
+            case "1Y" -> "D";      // 1 day
+            case "2Y" -> "W";      // 1 week
+            case "5Y" -> "W";      // 1 week
+            case "10Y" -> "M";     // 1 month
+            case "MAX" -> "M";     // 1 month
+            default -> "D";
+        };
     }
 
     @Override
