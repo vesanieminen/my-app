@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Launch Application",
+      "request": "launch",
+      "mainClass": "com.example.application.Application",
+      "env": {
+        "FINNHUB_API_KEY": "YOUR_FINNHUB_API_KEY"
+      }
+    },
+    {
+      "type": "java",
+      "request": "attach",
+      "name": "Attach to Application started using Maven",
+      "hostName": "localhost",
+      "port": 5247
+    }
+  ]
+}

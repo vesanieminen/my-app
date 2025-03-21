@@ -15,9 +15,9 @@ public class StockService {
     
     private final RestTemplate restTemplate;
     private final String apiKey;
-    private static final String BASE_URL = "https://www.alphavantage.co/query";
+    private static final String BASE_URL = "https://finnhub.io/api/v1";
 
-    public StockService(@Value("${alphavantage.api.key:demo}") String apiKey) {
+    public StockService(@Value("${finnhub.api.key}") String apiKey) {
         this.apiKey = apiKey;
         this.restTemplate = new RestTemplate();
     }
@@ -26,27 +26,20 @@ public class StockService {
         List<StockQuote> quotes = new ArrayList<>();
         for (String symbol : symbols) {
             try {
-                String url = String.format("%s?function=GLOBAL_QUOTE&symbol=%s&apikey=%s",
+                String url = String.format("%s/quote?symbol=%s&token=%s",
                         BASE_URL, symbol.toUpperCase(), apiKey);
                 
-                ResponseEntity<AlphaVantageResponse> response = restTemplate.getForEntity(url, AlphaVantageResponse.class);
-                AlphaVantageResponse data = response.getBody();
+                ResponseEntity<FinnhubQuote> response = restTemplate.getForEntity(url, FinnhubQuote.class);
+                FinnhubQuote data = response.getBody();
                 
-                if (data != null) {
-                    if (data.information != null) {
-                        System.err.println("API Error for " + symbol + ": " + data.information);
-                        quotes.add(createDefaultQuote(symbol));
-                    } else if (data.globalQuote != null) {
-                        quotes.add(data.globalQuote);
-                    } else {
-                        quotes.add(createDefaultQuote(symbol));
-                    }
+                if (data != null && data.getCurrentPrice() > 0) {
+                    quotes.add(convertToStockQuote(symbol, data));
                 } else {
                     quotes.add(createDefaultQuote(symbol));
                 }
                 
                 // Add a small delay to avoid hitting API rate limits
-                Thread.sleep(1000);
+                Thread.sleep(200);
                 
             } catch (Exception e) {
                 System.err.println("Error fetching stock quote for " + symbol + ": " + e.getMessage());
@@ -54,6 +47,16 @@ public class StockService {
             }
         }
         return quotes;
+    }
+
+    private StockQuote convertToStockQuote(String symbol, FinnhubQuote finnhubQuote) {
+        StockQuote quote = new StockQuote();
+        quote.setSymbol(symbol.toUpperCase());
+        quote.setPrice(String.format("%.2f", finnhubQuote.getCurrentPrice()));
+        double change = finnhubQuote.getChange();
+        quote.setChange(String.format("%.2f", change));
+        quote.setChangePercent(String.format("%.2f%%", finnhubQuote.getPercentChange()));
+        return quote;
     }
 
     private StockQuote createDefaultQuote(String symbol) {
@@ -66,53 +69,45 @@ public class StockService {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class AlphaVantageResponse {
-        @JsonProperty("Global Quote")
-        private StockQuote globalQuote;
+    public static class FinnhubQuote {
+        @JsonProperty("c")
+        private double currentPrice;
+        
+        @JsonProperty("d")
+        private double change;
+        
+        @JsonProperty("dp")
+        private double percentChange;
 
-        @JsonProperty("Information")
-        private String information;
-
-        @JsonProperty("Note")
-        private String note;
-
-        public StockQuote getGlobalQuote() {
-            return globalQuote;
+        public double getCurrentPrice() {
+            return currentPrice;
         }
 
-        public void setGlobalQuote(StockQuote globalQuote) {
-            this.globalQuote = globalQuote;
+        public void setCurrentPrice(double currentPrice) {
+            this.currentPrice = currentPrice;
         }
 
-        public String getInformation() {
-            return information;
+        public double getChange() {
+            return change;
         }
 
-        public void setInformation(String information) {
-            this.information = information;
+        public void setChange(double change) {
+            this.change = change;
         }
 
-        public String getNote() {
-            return note;
+        public double getPercentChange() {
+            return percentChange;
         }
 
-        public void setNote(String note) {
-            this.note = note;
+        public void setPercentChange(double percentChange) {
+            this.percentChange = percentChange;
         }
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class StockQuote {
-        @JsonProperty("01. symbol")
         private String symbol;
-        
-        @JsonProperty("05. price")
         private String price;
-        
-        @JsonProperty("09. change")
         private String change;
-        
-        @JsonProperty("10. change percent")
         private String changePercent;
 
         public String getSymbol() {

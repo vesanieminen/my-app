@@ -5,10 +5,10 @@ It contains all the necessary configuration and some placeholder files to get yo
 
 ## Configuration
 
-### Alpha Vantage API Key
-The application requires an Alpha Vantage API key for fetching stock data. Set it using the environment variable:
+### Finnhub.io API Key
+The application requires a Finnhub.io API key for fetching stock data. Set it using the environment variable:
 ```bash
-export ALPHAVANTAGE_API_KEY=your_key_here
+export FINNHUB_API_KEY=your_key_here
 ```
 
 ## Running the application
@@ -71,7 +71,7 @@ docker build . -t my-app:latest
 Once the Docker image is correctly built, you can run it using
 
 ```bash
-docker run -e ALPHAVANTAGE_API_KEY=your_key_here -p 8080:8080 my-app:latest
+docker run -e FINNHUB_API_KEY=your_key_here -p 8080:8080 my-app:latest
 ```
 
-Make sure to replace `your_key_here` with your actual Alpha Vantage API key.
+Make sure to replace `your_key_here` with your actual Finnhub.io API key.
